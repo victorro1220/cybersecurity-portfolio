@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build a small enterprise-style Active Directory environment that will later be integrated with Sysmon and Wazuh SIEM for detection engineering and SOC investigation practice.
+Build a small enterprise-style Active Directory environment and progressively add endpoint telemetry, security auditing, Sysmon, and later Wazuh SIEM for detection engineering and SOC investigation practice.
 
 This lab is designed to provide hands-on experience with:
 
@@ -15,7 +15,10 @@ This lab is designed to provide hands-on experience with:
 - Authentication monitoring
 - Account lockout investigation
 - PowerShell administration
-- SOC-style event analysis
+- Sysmon telemetry
+- Process creation analysis
+- File creation analysis
+- SOC-style event correlation
 
 ---
 
@@ -56,7 +59,7 @@ The Domain Controller was configured with two virtual network adapters.
 
 - VirtualBox Host-Only IP: `192.168.56.1/24`
 
-The internal network allows communication between the host and the Domain Controller while keeping the lab isolated from the physical network.
+The internal network allows communication between the host and the Domain Controller while keeping the lab separated from the physical LAN.
 
 ---
 
@@ -228,7 +231,7 @@ The following settings were configured:
 - Account lockout duration: 15 minutes
 - Reset account lockout counter after: 15 minutes
 
-The purpose of this configuration is to simulate realistic account security controls and later generate authentication events for SIEM analysis.
+The purpose of this configuration is to simulate realistic account security controls and generate authentication events for later SIEM analysis.
 
 ---
 
@@ -266,7 +269,7 @@ The policy was refreshed using:
 
 ### Validation
 
-The domain account policy was verified using:
+The effective account policy was verified using:
 
     net accounts /domain
 
@@ -487,6 +490,197 @@ This confirmed that the account was successfully unlocked and returned to a norm
 
 ---
 
+# Sysmon Deployment
+
+Sysmon from Microsoft Sysinternals was installed to add enhanced endpoint telemetry beyond the standard Windows Security logs.
+
+The Sysinternals Suite was extracted to:
+
+`C:\Tools\Sysinternals\SysinternalsSuite`
+
+A separate configuration directory was created:
+
+`C:\Tools\SysmonConfig`
+
+A community Sysmon configuration file was stored as:
+
+`C:\Tools\SysmonConfig\sysmonconfig-export.xml`
+
+Sysmon was installed using:
+
+    Sysmon64.exe -accepteula -i C:\Tools\SysmonConfig\sysmonconfig-export.xml
+
+The installation completed successfully.
+
+---
+
+## Sysmon Service Validation
+
+The Sysmon service was validated using:
+
+    sc query Sysmon64
+
+Result:
+
+    STATE : 4 RUNNING
+
+The Sysmon Operational log was also verified at:
+
+`Applications and Services Logs → Microsoft → Windows → Sysmon → Operational`
+
+Events began appearing immediately after installation.
+
+This confirmed that Sysmon was actively collecting endpoint telemetry.
+
+---
+
+## Sysmon Event ID 1 — Process Creation
+
+Sysmon Event ID 1 records process creation activity.
+
+A normal system event was first observed where:
+
+`ServerManager.exe`
+
+spawned:
+
+`Configure-SMRemoting.exe`
+
+This demonstrated how Sysmon records parent-child process relationships.
+
+Observed fields included:
+
+- Image
+- CommandLine
+- User
+- IntegrityLevel
+- ParentImage
+- ParentCommandLine
+- File hashes
+
+---
+
+## Controlled PowerShell Execution
+
+A controlled PowerShell process was executed to validate Sysmon telemetry.
+
+Command:
+
+    powershell.exe -Command "Write-Host 'CyberLab Sysmon Test'"
+
+Sysmon generated Event ID 1.
+
+### Observed Fields
+
+- Image:
+  `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
+
+- CommandLine:
+  `powershell.exe -Command "Write-Host 'CyberLab Sysmon Test'"`
+
+- User:
+  `CYBERLAB\Administrator`
+
+- Integrity Level:
+  `High`
+
+- Parent Process:
+  `C:\Windows\System32\cmd.exe`
+
+- Parent User:
+  `CYBERLAB\Administrator`
+
+- Current Directory:
+  `C:\Tools\Sysinternals\SysinternalsSuite\`
+
+- Hashes captured:
+  - MD5
+  - SHA256
+  - IMPHASH
+
+---
+
+## Sysmon Process Chain Analysis
+
+The process relationship was reconstructed as:
+
+    cmd.exe
+        ↓
+    powershell.exe
+        ↓
+    Write-Host "CyberLab Sysmon Test"
+
+This demonstrates how Sysmon can help reconstruct process execution chains during an endpoint investigation.
+
+### SOC Interpretation
+
+PowerShell was launched interactively from `cmd.exe` by:
+
+`CYBERLAB\Administrator`
+
+The command performed a benign test action.
+
+The event itself was not malicious, but it validated that Sysmon was successfully capturing:
+
+- process creation
+- command-line arguments
+- user context
+- integrity level
+- parent-child process relationships
+- executable hashes
+
+---
+
+## Sysmon Event ID 11 — File Creation
+
+Immediately after the PowerShell execution, Sysmon generated:
+
+`Event ID 11 — File Create`
+
+The event recorded the creation of:
+
+`C:\Users\Administrator\AppData\Local\Temp\__PSScriptPolicyTest_*.ps1`
+
+The process responsible was:
+
+`powershell.exe`
+
+The event also identified:
+
+- Process ID
+- Process GUID
+- User
+- Target filename
+- Creation timestamp
+
+### Analysis
+
+The generated `.ps1` file was consistent with normal PowerShell script execution policy testing.
+
+This activity was not considered malicious by itself.
+
+The event demonstrates how Sysmon records secondary filesystem activity generated by a process.
+
+---
+
+## Sysmon Event Correlation
+
+The controlled PowerShell test generated multiple related Sysmon events.
+
+Sequence:
+
+    Event ID 1
+    PowerShell process created
+            ↓
+    Event ID 11
+    Temporary PowerShell file created
+
+This demonstrates how multiple endpoint events can be correlated to reconstruct user and process activity.
+
+Later, Wazuh will be used to centralize and analyze this telemetry.
+
+---
+
 ## Skills Demonstrated
 
 This lab currently demonstrates hands-on experience with:
@@ -513,18 +707,31 @@ This lab currently demonstrates hands-on experience with:
 - Event ID 4740 analysis
 - Account lockout investigation
 - Account remediation
-- Basic SOC investigation workflow
+- Microsoft Sysinternals
+- Sysmon deployment
+- Sysmon configuration
+- Sysmon service validation
+- Sysmon Event ID 1 analysis
+- Sysmon Event ID 11 analysis
+- Process tree analysis
+- Parent-child process analysis
+- Command-line telemetry
+- File hash collection
+- Basic endpoint event correlation
+- SOC investigation workflow
 
 ---
 
 ## Security Events Covered
 
-| Event ID | Description |
-|---|---|
-| 4625 | Failed logon |
-| 4740 | User account locked out |
+| Source | Event ID | Description |
+|---|---:|---|
+| Windows Security | 4625 | Failed logon |
+| Windows Security | 4740 | User account locked out |
+| Sysmon | 1 | Process creation |
+| Sysmon | 11 | File creation |
 
-Future stages of the lab will introduce additional Windows and Sysmon events.
+Additional Windows and Sysmon events will be added as the lab progresses.
 
 ---
 
@@ -551,30 +758,40 @@ Future stages of the lab will introduce additional Windows and Sysmon events.
 - [x] Account lockout generated
 - [x] Event ID 4740 investigated
 - [x] Locked account remediated
-- [ ] Sysmon deployed
-- [ ] Sysmon configuration applied
+- [x] Sysmon downloaded
+- [x] Sysmon configuration added
+- [x] Sysmon installed
+- [x] Sysmon service validated
+- [x] Sysmon Operational log validated
+- [x] Sysmon Event ID 1 investigated
+- [x] Controlled PowerShell execution generated
+- [x] Parent-child process relationship analyzed
+- [x] Sysmon Event ID 11 investigated
+- [x] Basic Sysmon event correlation documented
 - [ ] Wazuh SIEM deployed
 - [ ] Wazuh agent connected
 - [ ] Windows Security Logs ingested into Wazuh
 - [ ] Sysmon logs ingested into Wazuh
 - [ ] Detection rules created
-- [ ] Controlled attack simulation performed
+- [ ] Authentication attack simulation performed
 - [ ] SIEM alert investigation documented
+- [ ] MITRE ATT&CK mapping completed
 - [ ] Final incident report completed
 
 ---
 
 ## Next Steps
 
-The next phase of the project will add:
+The next phase of the project will introduce:
 
-1. Sysmon
-2. Enhanced endpoint telemetry
-3. Wazuh SIEM
-4. Windows event ingestion
-5. Sysmon event ingestion
-6. Detection engineering
-7. Authentication attack simulation
+1. Wazuh SIEM
+2. Wazuh agent deployment
+3. Windows Security log ingestion
+4. Sysmon log ingestion
+5. Detection engineering
+6. Authentication-based detections
+7. Controlled attack simulation
 8. Alert correlation
-9. SOC investigation
-10. Incident reporting
+9. MITRE ATT&CK mapping
+10. SOC investigation
+11. Incident reporting
