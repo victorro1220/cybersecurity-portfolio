@@ -1,132 +1,260 @@
-# Active Directory Detection Lab
+# Active Directory Detection & SIEM Lab
 
-## Objective
+## Overview
 
-Build a small enterprise-style Active Directory environment and progressively add endpoint telemetry, security auditing, Sysmon, and later Wazuh SIEM for detection engineering and SOC investigation practice.
+This project documents the deployment of a small enterprise-style Active Directory environment and its integration with endpoint telemetry and a Wazuh SIEM.
 
-This lab is designed to provide hands-on experience with:
+The lab was built progressively to develop hands-on experience with:
 
 - Windows Server administration
 - Active Directory Domain Services
 - DNS
 - Group Policy
-- Security auditing
-- Windows Event Logs
+- Windows security auditing
+- Sysmon
+- Wazuh SIEM
+- Detection engineering
 - Authentication monitoring
-- Account lockout investigation
-- PowerShell administration
-- Sysmon telemetry
-- Process creation analysis
-- File creation analysis
-- SOC-style event correlation
+- MITRE ATT&CK mapping
+- SOC-style investigation
+- Security event correlation
+- Troubleshooting
+
+Rather than only deploying tools, the project focuses on understanding how security telemetry is generated, collected, analyzed, correlated, and converted into actionable alerts.
 
 ---
 
-## Environment
+# Lab Architecture
 
-### Host System
+## Host System
 
 - Windows 11
 - Oracle VirtualBox 7.2.16
 - Intel Core i3-1005G1
 - 8 GB RAM
 
-### Domain Controller
+Because the host system has limited resources, the lab was designed to minimize simultaneous virtual machine usage.
+
+---
+
+## Domain Controller — DC01
+
+Operating system:
 
 - Windows Server 2022 Standard Evaluation
-- Hostname: `DC01`
+- Desktop Experience
+
+Virtual hardware:
+
 - 2 GB RAM
 - 1 vCPU
 - 50 GB virtual disk
 
----
+Hostname:
 
-## Lab Architecture
+`DC01`
 
-The Domain Controller was configured with two virtual network adapters.
+Domain:
 
-### Adapter 1 — NAT
+`cyberlab.local`
 
-- IPv4: `10.0.2.15`
-- Purpose: Internet connectivity
+NetBIOS domain:
 
-### Adapter 2 — Host-Only
+`CYBERLAB`
 
-- IPv4: `192.168.56.10/24`
-- Purpose: Internal Active Directory lab network
+Internal IP:
 
-### Host System
-
-- VirtualBox Host-Only IP: `192.168.56.1/24`
-
-The internal network allows communication between the host and the Domain Controller while keeping the lab separated from the physical LAN.
+`192.168.56.10/24`
 
 ---
 
-## Windows Server Deployment
+## Wazuh Server — WAZUH01
+
+Operating system:
+
+- Ubuntu Server 24.04 LTS
+
+Virtual hardware:
+
+- 4 GB RAM
+- 2 vCPU
+- 60 GB virtual disk
+
+Hostname:
+
+`wazuh01`
+
+Internal IP:
+
+`192.168.56.30/24`
+
+Installed components:
+
+- Wazuh Manager
+- Wazuh Indexer
+- Wazuh Dashboard
+- Filebeat
+- OpenSSH Server
+
+---
+
+# Network Architecture
+
+Both virtual machines use two network interfaces.
+
+## NAT Network
+
+Used for Internet access and downloading packages.
+
+Example DC01 NAT address:
+
+`10.0.2.15`
+
+---
+
+## VirtualBox Host-Only Network
+
+Used for communication between lab systems.
+
+Network:
+
+`192.168.56.0/24`
+
+Systems:
+
+    Windows Host
+    192.168.56.1
+
+          │
+
+    VirtualBox Host-Only Network
+
+          │
+     ┌────┴────┐
+     │         │
+
+    DC01     WAZUH01
+    .10        .30
+
+DC01:
+
+`192.168.56.10`
+
+WAZUH01:
+
+`192.168.56.30`
+
+Windows host:
+
+`192.168.56.1`
+
+---
+
+# Windows Server Deployment
 
 Windows Server 2022 Standard Evaluation with Desktop Experience was installed manually in VirtualBox.
 
-The virtual machine was configured with:
+Initial virtual machine configuration:
 
 - VM name: `DC01`
-- 2 GB RAM
-- 1 vCPU
-- 50 GB virtual disk
+- RAM: 2 GB
+- CPU: 1 vCPU
+- Disk: 50 GB
 
-After installation, the default Windows Server hostname was changed to:
+After installation, the default Windows hostname was changed to:
 
 `DC01`
 
 ---
 
-## Active Directory Domain Services Deployment
+# Active Directory Domain Services
 
-The following roles and tools were installed:
+The following Windows Server roles and administrative tools were installed:
 
 - Active Directory Domain Services
 - DNS Server
 - Group Policy Management
 - Active Directory administrative tools
 
-The server was promoted to a Domain Controller using a new forest.
+DC01 was promoted to the first Domain Controller in a new forest.
 
-### Domain Configuration
+Forest:
 
-- Forest: `cyberlab.local`
-- NetBIOS domain: `CYBERLAB`
-- Domain Controller: `dc01.cyberlab.local`
+`cyberlab.local`
 
-The Domain Controller was also configured as:
+NetBIOS:
 
+`CYBERLAB`
+
+Domain Controller FQDN:
+
+`dc01.cyberlab.local`
+
+DC01 also operates as:
+
+- Domain Controller
 - DNS Server
 - Global Catalog
 
 ---
 
-## DNS Troubleshooting
+# DNS Configuration
 
-During deployment, the Domain Controller initially registered both network interfaces in Active Directory DNS.
+DC01 was configured with two network interfaces:
 
-### Incorrect DNS Registration
+## NAT Interface
+
+Purpose:
+
+Internet connectivity.
+
+Address:
+
+`10.0.2.15`
+
+---
+
+## Internal Active Directory Interface
+
+Purpose:
+
+Domain and lab communication.
+
+Static address:
+
+`192.168.56.10/24`
+
+DNS:
+
+`192.168.56.10`
+
+No default gateway was configured on this interface.
+
+---
+
+# DNS Troubleshooting
+
+During Active Directory deployment, DC01 registered both network interfaces in DNS.
+
+Incorrect registration:
 
 `cyberlab.local → 10.0.2.15`
 
-### Correct DNS Registration
+Correct registration:
 
 `cyberlab.local → 192.168.56.10`
 
-### Root Cause
+## Root Cause
 
-The VirtualBox NAT interface was configured to automatically register its IP address in DNS.
+The VirtualBox NAT interface was configured to automatically register itself in DNS.
 
-Because the Domain Controller was multihomed, both the NAT address and internal lab address were registered.
+Because DC01 was multihomed, the Domain Controller registered both its NAT and internal addresses.
 
-This could cause domain clients to resolve the Domain Controller using the wrong interface.
+This could cause domain clients to resolve the Domain Controller using the wrong network interface.
 
-### Remediation
+## Remediation
 
-DNS registration was disabled on the NAT interface.
+Automatic DNS registration was disabled on the NAT interface.
 
 The stale DNS record:
 
@@ -134,24 +262,22 @@ The stale DNS record:
 
 was removed from the `cyberlab.local` DNS zone.
 
-### Validation
-
-DNS resolution was tested using:
+DNS was validated using:
 
     nslookup dc01.cyberlab.local 192.168.56.10
 
-Result:
+Expected result:
 
     Name:    dc01.cyberlab.local
     Address: 192.168.56.10
 
-This confirmed that the Domain Controller was resolving correctly through the internal Active Directory network.
+The test confirmed that the Domain Controller correctly resolved using the internal lab interface.
 
 ---
 
-## Organizational Unit Structure
+# Organizational Unit Structure
 
-A custom Organizational Unit structure was created to separate lab objects from the default Active Directory containers.
+A custom OU structure was created to separate lab resources from the default Active Directory containers.
 
 Structure:
 
@@ -162,13 +288,13 @@ Structure:
         ├── Users
         └── Workstations
 
-This structure allows cleaner administration and makes it easier to apply Group Policies and security controls to specific object types.
+This provides cleaner administration and allows Group Policies and permissions to be applied to specific object types.
 
 ---
 
-## Domain Users
+# Domain Users
 
-Four test domain users were created inside:
+The following test accounts were created inside:
 
 `CyberLab → Users`
 
@@ -179,13 +305,13 @@ Accounts:
 - `mike.it`
 - `soc.analyst`
 
-A lab-only password was configured for the accounts.
+A lab-only password was configured.
 
-Passwords are intentionally not published in this repository.
+Passwords are intentionally not included in this repository.
 
 ---
 
-## Security Groups
+# Active Directory Security Groups
 
 The following Global Security Groups were created:
 
@@ -194,28 +320,32 @@ The following Global Security Groups were created:
 - `GG_IT`
 - `GG_SOC`
 
-### Group Membership
+## Group Membership
 
-- `john.smith`
-  - GG_Employees
+### John Smith
 
-- `anna.finance`
-  - GG_Employees
-  - GG_Finance
+- GG_Employees
 
-- `mike.it`
-  - GG_Employees
-  - GG_IT
+### Anna Finance
 
-- `soc.analyst`
-  - GG_Employees
-  - GG_SOC
+- GG_Employees
+- GG_Finance
 
-This structure simulates role-based access control inside an organization.
+### Mike IT
+
+- GG_Employees
+- GG_IT
+
+### SOC Analyst
+
+- GG_Employees
+- GG_SOC
+
+This structure simulates basic role-based access control.
 
 ---
 
-## Account Security Group Policy
+# Account Security Group Policy
 
 A custom Group Policy Object was created:
 
@@ -223,53 +353,51 @@ A custom Group Policy Object was created:
 
 The GPO was linked at the domain level.
 
-### Account Lockout Policy
+---
 
-The following settings were configured:
+## Account Lockout Policy
 
-- Account lockout threshold: 5 invalid logon attempts
+Configured settings:
+
+- Account lockout threshold: 5 invalid attempts
 - Account lockout duration: 15 minutes
 - Reset account lockout counter after: 15 minutes
 
-The purpose of this configuration is to simulate realistic account security controls and generate authentication events for later SIEM analysis.
+The purpose was to simulate realistic account security controls and generate events for SIEM detection testing.
 
 ---
 
-## Group Policy Troubleshooting
+# Group Policy Troubleshooting
 
-After applying the GPO, the expected lockout policy was not initially visible.
+After the custom policy was created, the expected lockout configuration was not initially effective.
 
-The first validation showed:
+Initial result:
 
     Lockout threshold: Never
-    Lockout duration: 30 minutes
-    Lockout observation window: 30 minutes
+    Lockout duration: 30
+    Lockout observation window: 30
 
-### Investigation
+The GPO link order was investigated.
 
-Group Policy link order was reviewed.
-
-Observed configuration:
+Observed:
 
     Link Order 1 → Default Domain Policy
     Link Order 2 → CyberLab - Account Security Policy
 
 Because a lower Link Order number has higher precedence at the same level, the Default Domain Policy was taking precedence.
 
-### Remediation
+## Remediation
 
-The custom GPO was moved to:
+The custom policy was moved to:
 
     Link Order 1 → CyberLab - Account Security Policy
     Link Order 2 → Default Domain Policy
 
-The policy was refreshed using:
+Policies were refreshed using:
 
     gpupdate /force
 
-### Validation
-
-The effective account policy was verified using:
+The effective domain policy was verified using:
 
     net accounts /domain
 
@@ -279,62 +407,73 @@ Result:
     Lockout duration (minutes):     15
     Lockout observation window:     15
 
-This confirmed that the custom security policy was successfully applied.
+---
+
+# Advanced Audit Policy
+
+Advanced auditing was configured through Group Policy.
 
 ---
 
-## Advanced Audit Policy
-
-Advanced auditing was configured through Group Policy to generate security telemetry for future SIEM analysis.
-
-### Logon / Logoff
+## Logon / Logoff
 
 Configured:
 
-- Audit Logon
-  - Success
-  - Failure
+### Audit Logon
 
-- Audit Account Lockout
-  - Success
+- Success
+- Failure
 
-### Account Logon
+### Audit Account Lockout
 
-Configured:
-
-- Audit Credential Validation
-  - Success
-  - Failure
-
-- Audit Kerberos Authentication Service
-  - Success
-  - Failure
-
-- Audit Kerberos Service Ticket Operations
-  - Success
-  - Failure
-
-### Account Management
-
-Configured:
-
-- Audit Security Group Management
-  - Success
-  - Failure
-
-- Audit User Account Management
-  - Success
-  - Failure
+- Success
 
 ---
 
-## Audit Policy Validation
+## Account Logon
 
-The effective audit configuration was validated using:
+Configured:
+
+### Audit Credential Validation
+
+- Success
+- Failure
+
+### Audit Kerberos Authentication Service
+
+- Success
+- Failure
+
+### Audit Kerberos Service Ticket Operations
+
+- Success
+- Failure
+
+---
+
+## Account Management
+
+Configured:
+
+### Audit Security Group Management
+
+- Success
+- Failure
+
+### Audit User Account Management
+
+- Success
+- Failure
+
+---
+
+# Audit Policy Validation
+
+The effective configuration was validated using:
 
     auditpol /get /category:*
 
-Verified settings included:
+Confirmed:
 
 - Logon: Success and Failure
 - Account Lockout: Success
@@ -344,21 +483,17 @@ Verified settings included:
 - Security Group Management: Success and Failure
 - User Account Management: Success and Failure
 
-This confirmed that the advanced audit configuration was successfully applied.
-
 ---
 
-## Failed Logon Event Generation
+# Windows Security Event Testing
 
-A controlled failed authentication attempt was generated against the test domain account:
+## Event ID 4625 — Failed Logon
 
-`john.smith`
-
-The following command was used:
+A controlled failed authentication attempt was generated using:
 
     runas /user:CYBERLAB\john.smith cmd
 
-An intentionally incorrect password was entered.
+An intentionally incorrect password was supplied.
 
 Windows generated:
 
@@ -366,157 +501,128 @@ Windows generated:
 
 ---
 
-## Security Event Analysis — Event ID 4625
+## Event 4625 Analysis
 
-The generated Event ID 4625 was investigated in Windows Event Viewer.
+Observed fields:
 
-### Event Details
-
-- Event ID: 4625
-- Computer: `DC01.cyberlab.local`
 - Target Account: `john.smith`
-- Target Domain: `CYBERLAB`
+- Domain: `CYBERLAB`
 - Logon Type: `2`
-- Authentication Package: `Negotiate`
-- Source Network Address: `::1`
-
-### Failure Information
-
-- Failure Reason: Unknown user name or bad password
 - Status: `0xC000006D`
-- Sub Status: `0xC000006A`
+- SubStatus: `0xC000006A`
+- Source: `::1`
+- Authentication Package: `Negotiate`
 
-The substatus:
+Substatus:
 
 `0xC000006A`
 
 indicates that the account exists but an incorrect password was supplied.
 
-### Logon Type Analysis
+Logon Type:
 
-Logon Type `2` represents an interactive logon.
+`2`
 
-Because the authentication attempt was generated directly from DC01, the source address appeared as:
+represents an interactive logon.
+
+Because the test was generated locally on DC01, the source address appeared as:
 
 `::1`
 
 which is the IPv6 loopback address.
 
-### SOC Interpretation
-
-A failed interactive authentication attempt was observed against:
-
-`CYBERLAB\john.smith`
-
-The Windows substatus confirmed that the account existed and that the supplied password was incorrect.
-
 ---
 
-## Account Lockout Testing
+# Account Lockout Testing
 
-The account lockout policy was tested using repeated failed authentication attempts.
+The `john.smith` account state was checked using:
 
-Before continuing, the account state was inspected using PowerShell:
-
-    Get-ADUser john.smith -Properties badPwdCount,LockedOut | Select-Object SamAccountName,badPwdCount,LockedOut
+    Get-ADUser john.smith -Properties badPwdCount,LockedOut |
+    Select-Object SamAccountName,badPwdCount,LockedOut
 
 Initial result:
 
     badPwdCount: 1
     LockedOut: False
 
-Additional controlled failed authentication attempts were generated.
+Additional failed logon attempts were generated.
 
-After five failed attempts:
+After the fifth failed authentication:
 
     badPwdCount: 5
     LockedOut: True
 
-This confirmed that the domain account lockout policy was functioning as expected.
-
 ---
 
-## Security Event Analysis — Event ID 4740
+# Event ID 4740 — Account Locked Out
 
-When the lockout threshold was reached, Windows generated:
+Windows generated:
 
 `Event ID 4740 — A user account was locked out`
 
-### Event Details
+Observed:
 
-- Event ID: 4740
-- Computer: `DC01.cyberlab.local`
-- Locked Account: `CYBERLAB\john.smith`
-- Caller Computer: `DC01`
-- Subject Account: `DC01$`
-- Subject Domain: `CYBERLAB`
+- Locked account: `CYBERLAB\john.smith`
+- Caller computer: `DC01`
+- Domain Controller: `DC01.cyberlab.local`
 
-### Event Sequence
-
-The security event chain was:
+The event chain was:
 
     Failed authentication
             ↓
         Event 4625
             ↓
-    Repeated failed attempts
+    Repeated authentication failures
             ↓
        badPwdCount = 5
             ↓
-       Account locked
+        Account locked
             ↓
         Event 4740
 
-This demonstrates how repeated failed authentication events can be correlated with an account lockout event during a SOC investigation.
-
 ---
 
-## Account Remediation
+# Account Remediation
 
-The locked domain account was restored using PowerShell:
+The locked account was restored using PowerShell:
 
     Unlock-ADAccount -Identity john.smith
 
-The account state was then validated using:
+Validation:
 
-    Get-ADUser john.smith -Properties badPwdCount,LockedOut | Select-Object SamAccountName,badPwdCount,LockedOut
+    Get-ADUser john.smith -Properties badPwdCount,LockedOut |
+    Select-Object SamAccountName,badPwdCount,LockedOut
 
 Result:
 
     badPwdCount: 0
     LockedOut: False
 
-This confirmed that the account was successfully unlocked and returned to a normal state.
-
 ---
 
 # Sysmon Deployment
 
-Sysmon from Microsoft Sysinternals was installed to add enhanced endpoint telemetry beyond the standard Windows Security logs.
+Microsoft Sysinternals Sysmon was installed to provide enhanced endpoint telemetry.
 
-The Sysinternals Suite was extracted to:
+Sysinternals was stored in:
 
 `C:\Tools\Sysinternals\SysinternalsSuite`
 
-A separate configuration directory was created:
-
-`C:\Tools\SysmonConfig`
-
-A community Sysmon configuration file was stored as:
+Sysmon configuration:
 
 `C:\Tools\SysmonConfig\sysmonconfig-export.xml`
 
-Sysmon was installed using:
+Installation command:
 
     Sysmon64.exe -accepteula -i C:\Tools\SysmonConfig\sysmonconfig-export.xml
 
-The installation completed successfully.
+Sysmon installed successfully.
 
 ---
 
-## Sysmon Service Validation
+# Sysmon Service Validation
 
-The Sysmon service was validated using:
+The service was verified using:
 
     sc query Sysmon64
 
@@ -524,31 +630,23 @@ Result:
 
     STATE : 4 RUNNING
 
-The Sysmon Operational log was also verified at:
+The Sysmon Event Channel was verified at:
 
 `Applications and Services Logs → Microsoft → Windows → Sysmon → Operational`
 
-Events began appearing immediately after installation.
-
-This confirmed that Sysmon was actively collecting endpoint telemetry.
-
 ---
 
-## Sysmon Event ID 1 — Process Creation
+# Sysmon Event ID 1 — Process Creation
 
-Sysmon Event ID 1 records process creation activity.
+Sysmon Event ID 1 records process creation.
 
-A normal system event was first observed where:
+A normal process relationship was observed:
 
-`ServerManager.exe`
+    ServerManager.exe
+           ↓
+    Configure-SMRemoting.exe
 
-spawned:
-
-`Configure-SMRemoting.exe`
-
-This demonstrated how Sysmon records parent-child process relationships.
-
-Observed fields included:
+Sysmon exposed fields including:
 
 - Image
 - CommandLine
@@ -556,207 +654,119 @@ Observed fields included:
 - IntegrityLevel
 - ParentImage
 - ParentCommandLine
-- File hashes
+- MD5
+- SHA256
+- IMPHASH
 
 ---
 
-## Controlled PowerShell Execution
+# Controlled PowerShell Sysmon Test
 
-A controlled PowerShell process was executed to validate Sysmon telemetry.
-
-Command:
+A controlled command was executed:
 
     powershell.exe -Command "Write-Host 'CyberLab Sysmon Test'"
 
 Sysmon generated Event ID 1.
 
-### Observed Fields
+Observed:
 
-- Image:
-  `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
+- Image: `powershell.exe`
+- User: `CYBERLAB\Administrator`
+- Integrity Level: High
+- Parent Process: `cmd.exe`
+- Command line captured
+- MD5 captured
+- SHA256 captured
+- IMPHASH captured
 
-- CommandLine:
-  `powershell.exe -Command "Write-Host 'CyberLab Sysmon Test'"`
-
-- User:
-  `CYBERLAB\Administrator`
-
-- Integrity Level:
-  `High`
-
-- Parent Process:
-  `C:\Windows\System32\cmd.exe`
-
-- Parent User:
-  `CYBERLAB\Administrator`
-
-- Current Directory:
-  `C:\Tools\Sysinternals\SysinternalsSuite\`
-
-- Hashes captured:
-  - MD5
-  - SHA256
-  - IMPHASH
-
----
-
-## Sysmon Process Chain Analysis
-
-The process relationship was reconstructed as:
+Process tree:
 
     cmd.exe
-        ↓
+       ↓
     powershell.exe
-        ↓
+       ↓
     Write-Host "CyberLab Sysmon Test"
 
-This demonstrates how Sysmon can help reconstruct process execution chains during an endpoint investigation.
-
-### SOC Interpretation
-
-PowerShell was launched interactively from `cmd.exe` by:
-
-`CYBERLAB\Administrator`
-
-The command performed a benign test action.
-
-The event itself was not malicious, but it validated that Sysmon was successfully capturing:
-
-- process creation
-- command-line arguments
-- user context
-- integrity level
-- parent-child process relationships
-- executable hashes
-
 ---
 
-## Sysmon Event ID 11 — File Creation
+# Sysmon Event ID 11 — File Creation
 
-Immediately after the PowerShell execution, Sysmon generated:
+The PowerShell execution also generated:
 
-`Event ID 11 — File Create`
+`Sysmon Event ID 11`
 
-The event recorded the creation of:
+A temporary `.ps1` file was created in the Administrator profile.
 
-`C:\Users\Administrator\AppData\Local\Temp\__PSScriptPolicyTest_*.ps1`
+The event demonstrated how Sysmon records filesystem activity associated with process execution.
 
-The process responsible was:
-
-`powershell.exe`
-
-The event also identified:
-
-- Process ID
-- Process GUID
-- User
-- Target filename
-- Creation timestamp
-
-### Analysis
-
-The generated `.ps1` file was consistent with normal PowerShell script execution policy testing.
-
-This activity was not considered malicious by itself.
-
-The event demonstrates how Sysmon records secondary filesystem activity generated by a process.
-
----
-
-## Sysmon Event Correlation
-
-The controlled PowerShell test generated multiple related Sysmon events.
-
-Sequence:
+Correlation:
 
     Event ID 1
-    PowerShell process created
+    PowerShell process creation
             ↓
     Event ID 11
-    Temporary PowerShell file created
-
-This demonstrates how multiple endpoint events can be correlated to reconstruct user and process activity.
-
-Later, Wazuh will be used to centralize and analyze this telemetry.
+    Temporary PowerShell file creation
 
 ---
-# Wazuh SIEM Deployment
 
-## WAZUH01 Server
+# Ubuntu Wazuh Server Deployment
 
-A dedicated Ubuntu Server virtual machine was deployed to host the Wazuh SIEM environment.
+A second VM was created:
+
+`WAZUH01`
+
+Operating system:
+
+Ubuntu Server 24.04 LTS.
 
 Configuration:
 
-- Hostname: `wazuh01`
-- Operating System: Ubuntu Server 24.04 LTS
 - RAM: 4 GB
 - CPU: 2 vCPU
-- Virtual Disk: 60 GB
-- Internal IP: `192.168.56.30/24`
-
-The server uses two network interfaces:
-
-- NAT for Internet access
-- VirtualBox Host-Only network for communication with the cybersecurity lab
-
-Network architecture:
-
-    Windows Host
-    192.168.56.1
-          │
-          │
-    Host-Only Network
-          │
-     ┌────┴─────┐
-     │          │
-    DC01      WAZUH01
-    .10          .30
-     │            │
-     │            └── Wazuh SIEM
-     │
-     └── Active Directory + Sysmon
+- Disk: 60 GB
+- Internal IP: `192.168.56.30`
 
 ---
 
-## Linux Remote Administration
+# Linux Remote Administration
 
-OpenSSH Server was installed during the Ubuntu deployment.
+OpenSSH Server was installed.
 
-The Wazuh server is administered remotely from the Windows host using:
+The Linux server is remotely administered from the Windows host using:
 
     ssh victor@192.168.56.30
 
-This provides a more practical Linux administration workflow and allows commands to be executed remotely without relying on the VirtualBox console.
+This provided practical experience with SSH-based Linux server administration.
 
 ---
 
-## Static Network Configuration
+# Static Linux Networking
 
-The internal Wazuh interface was configured with a static address using Netplan.
+Netplan was used to configure the network.
 
-Configuration:
+Interfaces:
 
-- NAT interface: `enp0s3`
-- Internal interface: `enp0s8`
-- Wazuh internal IP: `192.168.56.30/24`
+`enp0s3`
 
-The internal interface was changed from DHCP to a static address to ensure that Windows agents can consistently connect to the Wazuh manager.
+- NAT
+- DHCP
+
+`enp0s8`
+
+- Host-Only
+- Static address
+
+Static address:
+
+`192.168.56.30/24`
 
 ---
 
-## Wazuh Resource Optimization
+# Wazuh Resource Optimization
 
-The Wazuh all-in-one deployment requires significantly more resources than a minimal Ubuntu Server installation.
+The Wazuh all-in-one stack requires significantly more resources than the Ubuntu base system.
 
-Because this lab is running on resource-constrained hardware, several adjustments were required.
-
-WAZUH01 was configured with:
-
-- 4 GB RAM
-- 2 vCPU
-- Approximately 49 GB free disk space
-- Additional swap space
+Because this environment runs on limited hardware, additional swap space was configured.
 
 A 4 GB swap file was created:
 
@@ -765,337 +775,718 @@ A 4 GB swap file was created:
     sudo mkswap /swapfile
     sudo swapon /swapfile
 
-This provided additional memory protection during Wazuh installation and service initialization.
+WAZUH01 operated with:
+
+- approximately 4 GB physical RAM
+- additional swap
+- 2 vCPU
 
 ---
 
-## Wazuh Installation
+# Wazuh Installation
 
-Wazuh was deployed using the official all-in-one installation assistant.
+The official Wazuh all-in-one installer was used.
 
-The deployment installed:
-
-- Wazuh Manager
-- Wazuh Indexer
-- Wazuh Dashboard
-- Filebeat
-
-Installation command:
+Commands:
 
     curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
+
     sudo bash ./wazuh-install.sh -a
+
+Installed components:
+
+- Wazuh Indexer
+- Wazuh Manager
+- Filebeat
+- Wazuh Dashboard
 
 ---
 
-## Wazuh Indexer Startup Troubleshooting
+# Wazuh Indexer Troubleshooting
 
-During the initial installation, the Wazuh Indexer failed to finish starting before the systemd startup timeout.
+During the initial deployment, the Wazuh Indexer did not complete startup before the systemd timeout.
 
-Observed error:
+Observed:
 
     wazuh-indexer.service: start operation timed out
 
-The installation assistant subsequently removed the incomplete indexer deployment.
+The installation logs were reviewed.
 
-### Investigation
+Java/OpenSearch had started initialization but required more time because of limited virtual hardware.
 
-The installation log was reviewed at:
+---
 
-    /var/log/wazuh-install.log
+## Indexer Remediation
 
-System logs showed that the Java/OpenSearch process had begun initializing but did not complete before the service timeout.
-
-The system also experienced temporary CPU contention during the heavy initialization phase.
-
-### Remediation
-
-A systemd override was created to increase the Wazuh Indexer startup timeout:
+A systemd override was created:
 
     sudo mkdir -p /etc/systemd/system/wazuh-indexer.service.d
 
-    printf '[Service]\nTimeoutStartSec=15min\n' | \
+    printf '[Service]\nTimeoutStartSec=15min\n' |
     sudo tee /etc/systemd/system/wazuh-indexer.service.d/override.conf
 
-The systemd configuration was reloaded:
+Systemd configuration was reloaded:
 
     sudo systemctl daemon-reload
 
-The Wazuh installation was then executed again.
+The Wazuh installer was executed again.
 
-### Result
+The second attempt successfully initialized the indexer.
 
-The second installation successfully completed indexer initialization.
+Cluster status eventually reached:
 
-The Wazuh Indexer cluster reached:
-
-    GREEN
-
-This allowed the installer to continue with:
-
-- Wazuh Manager
-- Filebeat
-- Wazuh Dashboard
+`GREEN`
 
 ---
 
-## Wazuh Services Validation
+# Wazuh Service Validation
 
-After installation, the following services were validated:
+The following services were validated:
 
     sudo systemctl status wazuh-indexer
+
     sudo systemctl status wazuh-manager
+
     sudo systemctl status filebeat
+
     sudo systemctl status wazuh-dashboard
 
-All services reached:
+All services successfully reached:
 
-    active (running)
-
-The Wazuh Dashboard became available at:
-
-    https://192.168.56.30
-
-The browser displayed a certificate warning because the lab uses a self-signed certificate.
+`active (running)`
 
 ---
 
-## Wazuh API Troubleshooting
+# Wazuh Dashboard
 
-During the first dashboard health check, the dashboard displayed:
+The dashboard became available at:
 
-    Request failed with status code 500
+`https://192.168.56.30`
+
+A self-signed certificate warning was expected in the browser.
+
+---
+
+# Wazuh API Troubleshooting
+
+During initial startup, the dashboard reported:
+
     timeout of 20000ms exceeded
 
-The Wazuh API connection was investigated from WAZUH01.
+The Wazuh API was investigated.
 
-The API listener was verified on TCP port:
+API listener:
 
-    55000
+TCP `55000`
 
-Connectivity was tested locally using:
+Validation:
 
     curl -k https://127.0.0.1:55000
 
-The API responded successfully.
+The API responded.
 
-Logs showed that some API operations were taking significantly longer during initial service startup because the VM was temporarily under heavy resource load.
+Logs showed that some requests were taking significantly longer during initial startup because of resource contention.
 
-The Wazuh Indexer JVM heap was also reviewed:
+Indexer JVM heap configuration was reviewed:
 
     -Xms1024m
     -Xmx1024m
 
-No memory change was required.
-
-After allowing the environment to stabilize and refreshing the dashboard, all health checks completed successfully.
-
-This confirmed that the issue was temporary resource contention during the initial SIEM startup rather than an API or authentication failure.
+The issue disappeared after the environment stabilized.
 
 ---
 
-## Wazuh Dashboard
+# Wazuh Manager Startup Troubleshooting
 
-The Wazuh Dashboard was successfully accessed from the Windows host using:
+The Wazuh Manager also experienced slow startup under limited resources.
 
-    https://192.168.56.30
+A systemd timeout override was created to allow additional startup time.
 
-The following components were verified as operational:
+The manager was then restarted and successfully reached:
 
-- Wazuh Indexer
-- Wazuh Manager
-- Wazuh API
-- Filebeat
-- Wazuh Dashboard
+`active (running)`
+
+This provided additional experience troubleshooting Linux services and resource-constrained SIEM infrastructure.
 
 ---
 
-## Windows Agent Deployment
+# Wazuh Agent Deployment
 
-The Wazuh Agent was installed on the Active Directory Domain Controller:
+The Wazuh Windows agent was installed on:
 
 `DC01`
 
 Agent configuration:
 
-- Agent name: `DC01`
-- Operating System: Windows Server 2022
-- Wazuh Manager: `192.168.56.30`
+- Name: `DC01`
+- IP: `192.168.56.10`
+- Manager: `192.168.56.30`
 - Group: `Default`
 
-The Windows Wazuh service was validated using:
+The Windows service was validated using:
 
     Get-Service wazuhsvc
 
-The agent successfully registered with the Wazuh Manager.
+Result:
 
-The Wazuh Dashboard currently reports:
+`Running`
 
-    1 agent
+The Wazuh Dashboard detected:
 
-This confirms successful communication between the Windows Domain Controller and the Wazuh SIEM.
+`1 agent`
 
 ---
 
-## Current SIEM Architecture
+# Sysmon Integration with Wazuh
 
-The lab currently operates as:
+The Wazuh Windows Agent configuration was updated to ingest the Sysmon event channel.
 
-    DC01
-    Windows Server 2022
-    Active Directory
-    Windows Security Logs
+Added to `ossec.conf`:
+
+    <localfile>
+      <location>Microsoft-Windows-Sysmon/Operational</location>
+      <log_format>eventchannel</log_format>
+    </localfile>
+
+The agent was restarted:
+
+    Restart-Service wazuhsvc
+
+Sysmon events then became visible in Wazuh.
+
+---
+
+# Wazuh Sysmon Validation
+
+Wazuh successfully received Sysmon Event ID 1 events from:
+
+`DC01`
+
+This validated the complete telemetry pipeline:
+
+    Windows
+       ↓
     Sysmon
-         │
-         │ Wazuh Agent
-         ▼
-    WAZUH01
-    Ubuntu Server 24.04
-         │
-         ├── Wazuh Manager
-         ├── Wazuh Indexer
-         ├── Filebeat
-         └── Wazuh Dashboard
+       ↓
+    Wazuh Agent
+       ↓
+    Wazuh Manager
+       ↓
+    Wazuh Rule Engine
+       ↓
+    Wazuh Indexer
+       ↓
+    Threat Hunting
 
-The next phase will configure the Wazuh Agent to explicitly collect Sysmon events from:
+---
 
-    Microsoft-Windows-Sysmon/Operational
-## Skills Demonstrated
+# Stock Wazuh Alert Investigation
 
-This lab currently demonstrates hands-on experience with:
+A Wazuh rule generated a high-severity alert for:
+
+`svchost.exe`
+
+Rule:
+
+`61618`
+
+Description:
+
+`Sysmon - Suspicious Process - svchost.exe`
+
+Severity:
+
+`12`
+
+MITRE:
+
+`T1055 — Process Injection`
+
+The process executed from:
+
+`C:\Windows\System32\svchost.exe`
+
+Command line:
+
+`svchost.exe -k wsappx -p`
+
+Context suggested the activity was likely legitimate Windows behavior.
+
+This provided practical experience distinguishing between:
+
+- detection
+- suspicious behavior
+- actual malicious activity
+- possible false positives
+
+---
+
+# Custom Detection Engineering
+
+Three custom Wazuh rules were created and validated.
+
+---
+
+## Rule 100100 — Controlled PowerShell Detection
+
+Purpose:
+
+Validate that custom Wazuh detection rules could match Sysmon Event ID 1 command-line telemetry.
+
+Controlled command:
+
+    powershell.exe -Command "Write-Output 'CYBERLAB_CUSTOM_DETECTION_TEST'"
+
+Rule:
+
+    <rule id="100100" level="10">
+      <if_sid>61603</if_sid>
+      <field name="win.eventdata.image" type="pcre2">(?i)powershell\.exe$</field>
+      <field name="win.eventdata.commandLine" type="pcre2">CYBERLAB_CUSTOM_DETECTION_TEST</field>
+      <description>CyberLab custom detection - controlled PowerShell execution</description>
+      <mitre>
+        <id>T1059.001</id>
+      </mitre>
+      <group>cyberlab,powershell,custom_detection,</group>
+    </rule>
+
+Generated alert:
+
+- Rule ID: `100100`
+- Level: `10`
+- Agent: `DC01`
+- Technique: PowerShell
+- MITRE: `T1059.001`
+- Tactic: Execution
+
+Detection pipeline:
+
+    PowerShell
+        ↓
+    Sysmon Event ID 1
+        ↓
+    Wazuh base rule 61603
+        ↓
+    Custom rule 100100
+        ↓
+    Level 10 alert
+
+---
+
+# Custom Rule Troubleshooting
+
+During development of rule `100100`, several issues were encountered.
+
+These included:
+
+- duplicated rule IDs
+- malformed XML
+- Group tags not closed correctly
+- custom rule not triggering
+- Threat Hunting filters hiding results
+- manager startup delays after rule changes
+
+Rules were validated using:
+
+    sudo /var/ossec/bin/wazuh-analysisd -t
+
+Duplicate IDs were located using:
+
+    sudo grep -R -n '<rule id="100100"' \
+    /var/ossec/etc/rules \
+    /var/ossec/ruleset/rules
+
+The local rules file was eventually rebuilt cleanly.
+
+This provided hands-on experience with Wazuh rule troubleshooting and XML configuration.
+
+---
+
+# Rule 100101 — PowerShell ExecutionPolicy Bypass
+
+A more realistic behavioral detection was created.
+
+The rule detects PowerShell when:
+
+`-ExecutionPolicy Bypass`
+
+or:
+
+`-ep Bypass`
+
+appears in the command line.
+
+Rule:
+
+    <rule id="100101" level="12">
+      <if_sid>61603</if_sid>
+      <field name="win.eventdata.image" type="pcre2">(?i)powershell\.exe$</field>
+      <field name="win.eventdata.commandLine" type="pcre2">(?i)(-ExecutionPolicy\s+Bypass|-ep\s+Bypass)</field>
+      <description>CyberLab - PowerShell ExecutionPolicy Bypass detected</description>
+      <mitre>
+        <id>T1059.001</id>
+      </mitre>
+      <group>cyberlab,powershell,suspicious_execution,</group>
+    </rule>
+
+Controlled test:
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass \
+    -Command "Write-Output 'CYBERLAB_BYPASS_TEST'"
+
+Generated alert:
+
+- Rule ID: `100101`
+- Severity: `12`
+- Agent: `DC01`
+- MITRE ATT&CK: `T1059.001`
+- Technique: PowerShell
+- Tactic: Execution
+
+This detection is behavior-based rather than relying on a unique test string.
+
+---
+
+# Rule 100102 — Multiple Failed Logons
+
+The third custom rule correlates repeated authentication failures against the same account.
+
+Base Windows event:
+
+`4625`
+
+Base Wazuh rule:
+
+`60122`
+
+Target account:
+
+`john.smith`
+
+Correlation:
+
+- 5 failed authentication attempts
+- same target account
+- within the configured timeframe
+
+Generated custom alert:
+
+- Rule ID: `100102`
+- Severity: `12`
+- Frequency: `5`
+- Description: `CyberLab - Multiple failed logons detected for same account`
+- MITRE ATT&CK: `T1110`
+- Technique: Brute Force
+- Tactic: Credential Access
+
+Detection chain:
+
+    Failed logon
+        ↓
+    Windows Event ID 4625
+        ↓
+    Wazuh rule 60122
+        ↓
+    Repeated failures
+        ↓
+    Custom correlation rule 100102
+        ↓
+    Level 12 alert
+        ↓
+    MITRE T1110
+
+The same sequence eventually caused Active Directory to generate:
+
+`Event ID 4740 — Account Locked Out`
+
+This creates a complete authentication investigation chain:
+
+    Failed logons
+        ↓
+    Brute force correlation
+        ↓
+    Account lockout
+
+---
+
+# MITRE ATT&CK Coverage
+
+Custom detections currently cover:
+
+| Rule | Detection | MITRE Technique | Tactic |
+|---|---|---|---|
+| 100100 | Controlled PowerShell Execution | T1059.001 PowerShell | Execution |
+| 100101 | PowerShell ExecutionPolicy Bypass | T1059.001 PowerShell | Execution |
+| 100102 | Multiple Failed Logons | T1110 Brute Force | Credential Access |
+
+---
+
+# Security Events Investigated
+
+| Source | Event ID | Description |
+|---|---:|---|
+| Windows Security | 4625 | Failed logon |
+| Windows Security | 4740 | Account locked out |
+| Sysmon | 1 | Process creation |
+| Sysmon | 11 | File creation |
+
+---
+
+# Detection Engineering Workflow
+
+The custom detection workflow used during the project was:
+
+    Generate controlled activity
+            ↓
+    Validate event in Event Viewer
+            ↓
+    Confirm event reaches Wazuh
+            ↓
+    Identify Wazuh base rule
+            ↓
+    Write custom detection
+            ↓
+    Validate XML
+            ↓
+    Restart Wazuh Manager
+            ↓
+    Trigger behavior again
+            ↓
+    Confirm custom alert
+            ↓
+    Review event JSON
+            ↓
+    Map to MITRE ATT&CK
+            ↓
+    Document findings
+
+---
+
+# Troubleshooting Performed
+
+This lab included troubleshooting of:
+
+- VirtualBox resource constraints
+- Windows Server networking
+- Active Directory DNS
+- multihomed Domain Controller DNS registration
+- Group Policy precedence
+- Windows audit policy
+- account lockout behavior
+- VirtualBox clipboard limitations
+- SSH administration
+- Ubuntu static networking
+- Linux swap configuration
+- Wazuh Indexer startup timeout
+- Wazuh Manager startup timeout
+- Wazuh API response timeout
+- Wazuh Dashboard health checks
+- Sysmon integration
+- Wazuh Agent configuration
+- duplicated custom rule IDs
+- malformed Wazuh rule XML
+- Wazuh Threat Hunting filters
+- custom rule matching
+- event correlation
+
+---
+
+# Skills Demonstrated
+
+## Active Directory
 
 - Windows Server 2022
-- VirtualBox
 - Active Directory Domain Services
 - Domain Controller deployment
-- DNS configuration
-- DNS troubleshooting
 - Organizational Units
 - Domain users
 - Security groups
 - Group membership
 - Group Policy
-- GPO troubleshooting
 - Account lockout policies
+- DNS
+- DNS troubleshooting
+
+## Windows Security
+
 - Advanced Audit Policy
 - Windows Event Viewer
-- Windows Security Logs
-- PowerShell
-- Authentication monitoring
-- Event ID 4625 analysis
-- Event ID 4740 analysis
-- Account lockout investigation
-- Account remediation
-- Microsoft Sysinternals
-- Sysmon deployment
-- Sysmon configuration
-- Sysmon service validation
-- Sysmon Event ID 1 analysis
-- Sysmon Event ID 11 analysis
-- Process tree analysis
-- Parent-child process analysis
-- Command-line telemetry
-- File hash collection
-- Basic endpoint event correlation
-- SOC investigation workflow
+- Event ID 4625
+- Event ID 4740
+- PowerShell administration
+- Authentication investigation
+
+## Sysmon
+
+- Sysmon installation
+- Sysmon XML configuration
+- Sysmon Event ID 1
+- Sysmon Event ID 11
+- process tree analysis
+- command-line analysis
+- file hashes
+- parent-child process relationships
+- endpoint telemetry
+
+## Linux
+
 - Ubuntu Server 24.04
-- Linux command-line administration
-- SSH remote administration
+- SSH
+- Linux CLI
 - Netplan
-- Linux networking
-- Linux swap management
+- static networking
+- swap management
 - systemd
-- Linux service troubleshooting
-- Wazuh SIEM
+- service troubleshooting
+- journalctl
+
+## Wazuh
+
 - Wazuh Manager
 - Wazuh Indexer
 - Wazuh Dashboard
+- Wazuh Agent
 - Filebeat
 - Wazuh API
-- Windows Wazuh Agent
-- SIEM infrastructure deployment
-- SIEM performance troubleshooting
-- Resource-constrained server optimization
+- Windows EventChannel ingestion
+- Sysmon ingestion
+- Threat Hunting
+- custom detection rules
+- Wazuh rule inheritance
+- event correlation
+- SIEM troubleshooting
+
+## Detection Engineering
+
+- custom rule development
+- PCRE2 matching
+- behavioral detection
+- event correlation
+- severity assignment
+- alert validation
+- false-positive analysis
+- MITRE ATT&CK mapping
+
+## SOC Analysis
+
+- log analysis
+- authentication monitoring
+- PowerShell monitoring
+- account lockout investigation
+- process analysis
+- endpoint telemetry analysis
+- alert triage
+- timeline reconstruction
+- detection validation
+
 ---
 
-## Security Events Covered
-
-| Source | Event ID | Description |
-|---|---:|---|
-| Windows Security | 4625 | Failed logon |
-| Windows Security | 4740 | User account locked out |
-| Sysmon | 1 | Process creation |
-| Sysmon | 11 | File creation |
-
-Additional Windows and Sysmon events will be added as the lab progresses.
-
----
-
-## Current Status
+# Final Lab Status
 
 - [x] Windows Server 2022 deployed
-- [x] DC01 hostname configured
-- [x] Dual network adapters configured
-- [x] Static internal IP configured
-- [x] Active Directory Domain Services installed
-- [x] `cyberlab.local` forest created
-- [x] DNS configured and validated
-- [x] Multihomed DNS registration issue remediated
+- [x] DC01 configured
+- [x] Active Directory deployed
+- [x] DNS configured
+- [x] DNS issue investigated and remediated
 - [x] Organizational Units created
 - [x] Domain users created
 - [x] Security groups created
 - [x] Group memberships configured
-- [x] Domain account lockout policy configured
-- [x] Group Policy precedence issue investigated and corrected
+- [x] Account lockout policy configured
+- [x] Group Policy precedence troubleshot
 - [x] Advanced Audit Policy configured
 - [x] Audit policy validated
-- [x] Failed authentication event generated
+- [x] Event ID 4625 generated
 - [x] Event ID 4625 investigated
-- [x] Account lockout generated
-- [x] Event ID 4740 investigated
-- [x] Locked account remediated
+- [x] Event ID 4740 generated
+- [x] Account lockout investigated
+- [x] Account unlocked
 - [x] Sysmon installed
-- [x] Sysmon service validated
-- [x] Sysmon Event ID 1 investigated
-- [x] Sysmon Event ID 11 investigated
-- [x] Basic Sysmon event correlation documented
-- [x] Ubuntu WAZUH01 server deployed
-- [x] Static Wazuh IP configured
-- [x] SSH remote administration configured
-- [x] Wazuh resource constraints investigated
-- [x] Swap configured
-- [x] Wazuh Indexer startup timeout troubleshot
-- [x] Wazuh Indexer deployed
-- [x] Wazuh Manager deployed
-- [x] Filebeat deployed
-- [x] Wazuh Dashboard deployed
-- [x] Wazuh services validated
-- [x] Wazuh API investigated and validated
-- [x] Wazuh Dashboard accessed successfully
-- [x] DC01 Wazuh Agent installed
-- [x] DC01 detected by Wazuh
-- [ ] Sysmon channel configured in Wazuh Agent
-- [ ] Sysmon events verified inside Wazuh
-- [ ] Windows authentication events verified inside Wazuh
-- [ ] Custom detection rules created
-- [ ] Controlled attack simulation performed
-- [ ] SIEM alert investigation documented
-- [ ] MITRE ATT&CK mapping completed
-- [ ] Final incident report completed
+- [x] Sysmon Event ID 1 analyzed
+- [x] Sysmon Event ID 11 analyzed
+- [x] Ubuntu Server deployed
+- [x] SSH configured
+- [x] Wazuh SIEM deployed
+- [x] Wazuh Indexer configured
+- [x] Wazuh Manager configured
+- [x] Wazuh Dashboard configured
+- [x] Wazuh API validated
+- [x] Wazuh Agent installed on DC01
+- [x] DC01 connected to Wazuh
+- [x] Sysmon integrated with Wazuh
+- [x] Wazuh Sysmon alert investigated
+- [x] Custom rule 100100 created
+- [x] Custom rule 100100 validated
+- [x] Custom rule 100101 created
+- [x] PowerShell Bypass detection validated
+- [x] Custom rule 100102 created
+- [x] Multiple failed logons correlated
+- [x] MITRE ATT&CK mappings implemented
+- [x] Detection engineering workflow documented
 
 ---
 
-## Next Steps
+# Conclusion
 
-The next phase of the project will introduce:
+This lab evolved from a basic Windows Server deployment into a complete small-scale detection engineering environment.
 
-1. Wazuh SIEM
-2. Wazuh agent deployment
-3. Windows Security log ingestion
-4. Sysmon log ingestion
-5. Detection engineering
-6. Authentication-based detections
-7. Controlled attack simulation
-8. Alert correlation
-9. MITRE ATT&CK mapping
-10. SOC investigation
-11. Incident reporting
+The environment included:
+
+- Active Directory
+- DNS
+- Group Policy
+- Windows Security auditing
+- Sysmon endpoint telemetry
+- Ubuntu Linux
+- Wazuh SIEM
+- Windows agents
+- custom detection engineering
+- event correlation
+- MITRE ATT&CK mapping
+
+Several configuration and performance problems occurred during implementation.
+
+Instead of being skipped, those issues were investigated and documented as part of the project.
+
+The final environment successfully demonstrated the complete security monitoring pipeline:
+
+    User / System Activity
+            ↓
+       Windows Logs
+            ↓
+          Sysmon
+            ↓
+       Wazuh Agent
+            ↓
+       Wazuh Manager
+            ↓
+       Detection Rules
+            ↓
+       Wazuh Indexer
+            ↓
+      Threat Hunting
+            ↓
+      SOC Investigation
+
+The project provided practical experience in both infrastructure administration and defensive cybersecurity monitoring.
+
+---
+
+# Next Project
+
+The next portfolio lab will move away from local virtualization and focus on cloud Identity and Access Management.
+
+Planned topics include:
+
+- Microsoft Entra ID
+- users and groups
+- role-based access control
+- least privilege
+- MFA
+- Conditional Access
+- identity lifecycle
+- enterprise applications
+- sign-in logs
+- audit logs
+- IAM security investigation
+- cloud identity risk assessment
