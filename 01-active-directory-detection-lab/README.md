@@ -680,7 +680,285 @@ This demonstrates how multiple endpoint events can be correlated to reconstruct 
 Later, Wazuh will be used to centralize and analyze this telemetry.
 
 ---
+# Wazuh SIEM Deployment
 
+## WAZUH01 Server
+
+A dedicated Ubuntu Server virtual machine was deployed to host the Wazuh SIEM environment.
+
+Configuration:
+
+- Hostname: `wazuh01`
+- Operating System: Ubuntu Server 24.04 LTS
+- RAM: 4 GB
+- CPU: 2 vCPU
+- Virtual Disk: 60 GB
+- Internal IP: `192.168.56.30/24`
+
+The server uses two network interfaces:
+
+- NAT for Internet access
+- VirtualBox Host-Only network for communication with the cybersecurity lab
+
+Network architecture:
+
+    Windows Host
+    192.168.56.1
+          │
+          │
+    Host-Only Network
+          │
+     ┌────┴─────┐
+     │          │
+    DC01      WAZUH01
+    .10          .30
+     │            │
+     │            └── Wazuh SIEM
+     │
+     └── Active Directory + Sysmon
+
+---
+
+## Linux Remote Administration
+
+OpenSSH Server was installed during the Ubuntu deployment.
+
+The Wazuh server is administered remotely from the Windows host using:
+
+    ssh victor@192.168.56.30
+
+This provides a more practical Linux administration workflow and allows commands to be executed remotely without relying on the VirtualBox console.
+
+---
+
+## Static Network Configuration
+
+The internal Wazuh interface was configured with a static address using Netplan.
+
+Configuration:
+
+- NAT interface: `enp0s3`
+- Internal interface: `enp0s8`
+- Wazuh internal IP: `192.168.56.30/24`
+
+The internal interface was changed from DHCP to a static address to ensure that Windows agents can consistently connect to the Wazuh manager.
+
+---
+
+## Wazuh Resource Optimization
+
+The Wazuh all-in-one deployment requires significantly more resources than a minimal Ubuntu Server installation.
+
+Because this lab is running on resource-constrained hardware, several adjustments were required.
+
+WAZUH01 was configured with:
+
+- 4 GB RAM
+- 2 vCPU
+- Approximately 49 GB free disk space
+- Additional swap space
+
+A 4 GB swap file was created:
+
+    sudo fallocate -l 4G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+
+This provided additional memory protection during Wazuh installation and service initialization.
+
+---
+
+## Wazuh Installation
+
+Wazuh was deployed using the official all-in-one installation assistant.
+
+The deployment installed:
+
+- Wazuh Manager
+- Wazuh Indexer
+- Wazuh Dashboard
+- Filebeat
+
+Installation command:
+
+    curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
+    sudo bash ./wazuh-install.sh -a
+
+---
+
+## Wazuh Indexer Startup Troubleshooting
+
+During the initial installation, the Wazuh Indexer failed to finish starting before the systemd startup timeout.
+
+Observed error:
+
+    wazuh-indexer.service: start operation timed out
+
+The installation assistant subsequently removed the incomplete indexer deployment.
+
+### Investigation
+
+The installation log was reviewed at:
+
+    /var/log/wazuh-install.log
+
+System logs showed that the Java/OpenSearch process had begun initializing but did not complete before the service timeout.
+
+The system also experienced temporary CPU contention during the heavy initialization phase.
+
+### Remediation
+
+A systemd override was created to increase the Wazuh Indexer startup timeout:
+
+    sudo mkdir -p /etc/systemd/system/wazuh-indexer.service.d
+
+    printf '[Service]\nTimeoutStartSec=15min\n' | \
+    sudo tee /etc/systemd/system/wazuh-indexer.service.d/override.conf
+
+The systemd configuration was reloaded:
+
+    sudo systemctl daemon-reload
+
+The Wazuh installation was then executed again.
+
+### Result
+
+The second installation successfully completed indexer initialization.
+
+The Wazuh Indexer cluster reached:
+
+    GREEN
+
+This allowed the installer to continue with:
+
+- Wazuh Manager
+- Filebeat
+- Wazuh Dashboard
+
+---
+
+## Wazuh Services Validation
+
+After installation, the following services were validated:
+
+    sudo systemctl status wazuh-indexer
+    sudo systemctl status wazuh-manager
+    sudo systemctl status filebeat
+    sudo systemctl status wazuh-dashboard
+
+All services reached:
+
+    active (running)
+
+The Wazuh Dashboard became available at:
+
+    https://192.168.56.30
+
+The browser displayed a certificate warning because the lab uses a self-signed certificate.
+
+---
+
+## Wazuh API Troubleshooting
+
+During the first dashboard health check, the dashboard displayed:
+
+    Request failed with status code 500
+    timeout of 20000ms exceeded
+
+The Wazuh API connection was investigated from WAZUH01.
+
+The API listener was verified on TCP port:
+
+    55000
+
+Connectivity was tested locally using:
+
+    curl -k https://127.0.0.1:55000
+
+The API responded successfully.
+
+Logs showed that some API operations were taking significantly longer during initial service startup because the VM was temporarily under heavy resource load.
+
+The Wazuh Indexer JVM heap was also reviewed:
+
+    -Xms1024m
+    -Xmx1024m
+
+No memory change was required.
+
+After allowing the environment to stabilize and refreshing the dashboard, all health checks completed successfully.
+
+This confirmed that the issue was temporary resource contention during the initial SIEM startup rather than an API or authentication failure.
+
+---
+
+## Wazuh Dashboard
+
+The Wazuh Dashboard was successfully accessed from the Windows host using:
+
+    https://192.168.56.30
+
+The following components were verified as operational:
+
+- Wazuh Indexer
+- Wazuh Manager
+- Wazuh API
+- Filebeat
+- Wazuh Dashboard
+
+---
+
+## Windows Agent Deployment
+
+The Wazuh Agent was installed on the Active Directory Domain Controller:
+
+`DC01`
+
+Agent configuration:
+
+- Agent name: `DC01`
+- Operating System: Windows Server 2022
+- Wazuh Manager: `192.168.56.30`
+- Group: `Default`
+
+The Windows Wazuh service was validated using:
+
+    Get-Service wazuhsvc
+
+The agent successfully registered with the Wazuh Manager.
+
+The Wazuh Dashboard currently reports:
+
+    1 agent
+
+This confirms successful communication between the Windows Domain Controller and the Wazuh SIEM.
+
+---
+
+## Current SIEM Architecture
+
+The lab currently operates as:
+
+    DC01
+    Windows Server 2022
+    Active Directory
+    Windows Security Logs
+    Sysmon
+         │
+         │ Wazuh Agent
+         ▼
+    WAZUH01
+    Ubuntu Server 24.04
+         │
+         ├── Wazuh Manager
+         ├── Wazuh Indexer
+         ├── Filebeat
+         └── Wazuh Dashboard
+
+The next phase will configure the Wazuh Agent to explicitly collect Sysmon events from:
+
+    Microsoft-Windows-Sysmon/Operational
 ## Skills Demonstrated
 
 This lab currently demonstrates hands-on experience with:
@@ -719,7 +997,24 @@ This lab currently demonstrates hands-on experience with:
 - File hash collection
 - Basic endpoint event correlation
 - SOC investigation workflow
-
+- Ubuntu Server 24.04
+- Linux command-line administration
+- SSH remote administration
+- Netplan
+- Linux networking
+- Linux swap management
+- systemd
+- Linux service troubleshooting
+- Wazuh SIEM
+- Wazuh Manager
+- Wazuh Indexer
+- Wazuh Dashboard
+- Filebeat
+- Wazuh API
+- Windows Wazuh Agent
+- SIEM infrastructure deployment
+- SIEM performance troubleshooting
+- Resource-constrained server optimization
 ---
 
 ## Security Events Covered
@@ -758,22 +1053,31 @@ Additional Windows and Sysmon events will be added as the lab progresses.
 - [x] Account lockout generated
 - [x] Event ID 4740 investigated
 - [x] Locked account remediated
-- [x] Sysmon downloaded
-- [x] Sysmon configuration added
 - [x] Sysmon installed
 - [x] Sysmon service validated
-- [x] Sysmon Operational log validated
 - [x] Sysmon Event ID 1 investigated
-- [x] Controlled PowerShell execution generated
-- [x] Parent-child process relationship analyzed
 - [x] Sysmon Event ID 11 investigated
 - [x] Basic Sysmon event correlation documented
-- [ ] Wazuh SIEM deployed
-- [ ] Wazuh agent connected
-- [ ] Windows Security Logs ingested into Wazuh
-- [ ] Sysmon logs ingested into Wazuh
-- [ ] Detection rules created
-- [ ] Authentication attack simulation performed
+- [x] Ubuntu WAZUH01 server deployed
+- [x] Static Wazuh IP configured
+- [x] SSH remote administration configured
+- [x] Wazuh resource constraints investigated
+- [x] Swap configured
+- [x] Wazuh Indexer startup timeout troubleshot
+- [x] Wazuh Indexer deployed
+- [x] Wazuh Manager deployed
+- [x] Filebeat deployed
+- [x] Wazuh Dashboard deployed
+- [x] Wazuh services validated
+- [x] Wazuh API investigated and validated
+- [x] Wazuh Dashboard accessed successfully
+- [x] DC01 Wazuh Agent installed
+- [x] DC01 detected by Wazuh
+- [ ] Sysmon channel configured in Wazuh Agent
+- [ ] Sysmon events verified inside Wazuh
+- [ ] Windows authentication events verified inside Wazuh
+- [ ] Custom detection rules created
+- [ ] Controlled attack simulation performed
 - [ ] SIEM alert investigation documented
 - [ ] MITRE ATT&CK mapping completed
 - [ ] Final incident report completed
