@@ -2,9 +2,9 @@
 
 ## Overview
 
-This project documents the implementation and validation of a cloud-based Identity and Access Management environment using Microsoft Entra ID.
+This project documents the implementation, validation, and security review of a cloud-based Identity and Access Management environment using Microsoft Entra ID.
 
-The lab was designed to move beyond basic user administration and demonstrate practical IAM concepts including:
+The lab was designed to move beyond basic user administration and demonstrate practical IAM and Identity Security concepts including:
 
 - Cloud identity administration
 - Security groups
@@ -23,9 +23,27 @@ The lab was designed to move beyond basic user administration and demonstrate pr
 - Administrative consent
 - Non-interactive application authentication
 - Client Credentials flow
+- Service Principal security review
+- Application permission remediation
+- OAuth token claim analysis
+- Microsoft Entra Audit Logs
 - Identity security troubleshooting
 
 The environment simulates multiple business and administrative roles and validates both permitted and restricted actions.
+
+The project later evolved into a Service Principal security assessment that followed a complete workflow:
+
+```text
+Discovery
+    ↓
+Risk Assessment
+    ↓
+Remediation
+    ↓
+Technical Validation
+    ↓
+Audit Trail Review
+```
 
 ---
 
@@ -64,13 +82,19 @@ Microsoft Entra ID
         │
         ├── Administrative Roles
         │
+        ├── MFA
+        │
         ├── Sign-in Logs
+        │
+        ├── Audit Logs
         │
         ├── Enterprise Applications
         │
         ├── App Registrations
         │
         ├── Service Principals
+        │
+        ├── OAuth 2.0
         │
         └── Microsoft Graph
 ```
@@ -154,19 +178,30 @@ Standard users intentionally received no administrative roles.
 
 This design follows the principle of Least Privilege.
 
-Each administrative role was validated through both permitted and restricted actions.
+Each administrative role was validated through both:
+
+- permitted actions
+- restricted actions
 
 ---
 
 ## Helpdesk Administrator Validation
 
-The identity `Lab Helpdesk` was assigned the `Helpdesk Administrator` role.
+The identity:
+
+`Lab Helpdesk`
+
+was assigned:
+
+`Helpdesk Administrator`
 
 The account was tested in a separate authenticated session.
 
 ### Allowed Action – Password Reset
 
-The Helpdesk Administrator successfully reset the password of `John Smith`.
+The Helpdesk Administrator successfully reset the password of:
+
+`John Smith`
 
 This validated that the role had sufficient permissions to perform basic user support operations.
 
@@ -188,7 +223,11 @@ The Helpdesk Administrator accessed:
 
 The account could view the role but could not add new assignments.
 
-The `Add assignments` option was unavailable.
+The:
+
+`Add assignments`
+
+option was unavailable.
 
 Validated access model:
 
@@ -208,15 +247,23 @@ This demonstrated that Helpdesk permissions were sufficient for support function
 
 ## Security Reader Validation
 
-The identity `SOC Analyst` was assigned the `Security Reader` role.
+The identity:
+
+`SOC Analyst`
+
+was assigned:
+
+`Security Reader`
 
 This account was tested to verify read-only access to security information.
 
 ### Allowed Action – Sign-In Logs
 
-The SOC Analyst successfully accessed Microsoft Entra sign-in logs.
+The SOC Analyst successfully accessed:
 
-Recent authentication events could be reviewed from the Entra Admin Center.
+`Users → Sign-in logs`
+
+Recent Microsoft Entra authentication events were visible.
 
 The account could review information including:
 
@@ -227,7 +274,9 @@ The account could review information including:
 
 ### Restricted Action – Password Reset
 
-The SOC Analyst attempted to reset the password of `John Smith`.
+The SOC Analyst attempted to reset the password of:
+
+`John Smith`
 
 Microsoft Entra rejected the operation because the account did not have sufficient administrative privileges.
 
@@ -244,13 +293,25 @@ Security Reader
 ✗ Modify user identities
 ```
 
-This demonstrated separation between security visibility and identity administration.
+This demonstrated separation between:
+
+`Security visibility`
+
+and:
+
+`Identity administration`
 
 ---
 
 ## User Administrator Validation
 
-The identity `Lab IAM Admin` was assigned the `User Administrator` role.
+The identity:
+
+`Lab IAM Admin`
+
+was assigned:
+
+`User Administrator`
 
 The role was tested against standard user management operations.
 
@@ -355,7 +416,10 @@ The App Registration created an application object containing:
 
 ## App Registration vs Enterprise Application
 
-An important part of this lab was understanding the distinction between an App Registration and an Enterprise Application.
+An important part of this lab was understanding the distinction between:
+
+- App Registration
+- Enterprise Application
 
 ### App Registration
 
@@ -381,9 +445,19 @@ Defines the application
 
 ### Enterprise Application
 
-Microsoft Entra also created an Enterprise Application for `CyberLab-IAM-App`.
+Microsoft Entra also created an:
 
-This object represents the application's Service Principal inside the tenant.
+`Enterprise Application`
+
+for:
+
+`CyberLab-IAM-App`
+
+This object represents the application's:
+
+`Service Principal`
+
+inside the tenant.
 
 ```text
 App Registration
@@ -418,7 +492,11 @@ A test identity was explicitly assigned:
 
 `Anna Finance`
 
-Another user, `Mike IT`, was intentionally left unassigned.
+Another user:
+
+`Mike IT`
+
+was intentionally left unassigned.
 
 ```text
 Enterprise Application
@@ -488,9 +566,17 @@ Delegated Permission
 Microsoft Graph
 ```
 
-The application acts on behalf of the signed-in user.
+The application acts:
 
-The initial permission `User.Read` was configured as `Delegated`.
+`On behalf of the signed-in user`
+
+The initial permission:
+
+`User.Read`
+
+was configured as:
+
+`Delegated`
 
 ---
 
@@ -500,7 +586,9 @@ The lab then introduced:
 
 `User.Read.All`
 
-as an Application permission.
+as a Microsoft Graph:
+
+`Application permission`
 
 Unlike Delegated permissions, Application permissions do not require an interactive user session.
 
@@ -540,7 +628,11 @@ Application permissions can allow background services or automation systems to a
 
 ## Admin Consent
 
-After `User.Read.All` was added as an Application permission, its initial state was:
+After:
+
+`User.Read.All`
+
+was added as an Application permission, its initial state was:
 
 ```text
 User.Read.All
@@ -551,7 +643,11 @@ Admin Consent Required: Yes
 
 The permission was configured but was not yet usable by the application.
 
-A Global Administrator reviewed and granted Admin Consent for the tenant.
+A Global Administrator reviewed and granted:
+
+`Admin Consent`
+
+for the tenant.
 
 After approval:
 
@@ -604,7 +700,11 @@ During testing, the difference between:
 
 was validated.
 
-Only the Client Secret Value can be used as the application credential.
+Only the:
+
+`Client Secret Value`
+
+can be used as the application credential.
 
 Sensitive information is not stored in this repository.
 
@@ -620,7 +720,9 @@ Excluded values include:
 
 ## OAuth 2.0 Client Credentials Grant
 
-The application was authenticated using OAuth 2.0 Client Credentials.
+The application was authenticated using:
+
+`OAuth 2.0 Client Credentials`
 
 This flow is designed for application-to-application authentication without a signed-in user.
 
@@ -677,9 +779,13 @@ confirmed that Microsoft Entra issued an access token to the application.
 
 The first authentication attempt failed because the application credential was invalid.
 
+The authentication process was investigated.
+
 The Tenant ID and Client ID were validated successfully.
 
-The problem was isolated to the Client Secret.
+The problem was isolated to:
+
+`Client Secret`
 
 The distinction between:
 
@@ -699,7 +805,9 @@ This provided practical experience troubleshooting OAuth application authenticat
 
 ## Microsoft Graph Query
 
-The application access token was then used to query Microsoft Graph.
+The application access token was then used to query:
+
+`Microsoft Graph`
 
 Endpoint:
 
@@ -756,24 +864,431 @@ This operation occurred without a signed-in user.
 
 ---
 
-## Security Significance
+# Service Principal Security Review and Remediation
 
-Application permissions can be highly privileged because they allow Service Principals to operate independently of human users.
+A security review was performed against the:
 
-The lab demonstrated that `User.Read.All` allowed the application to query directory users after admin consent was granted.
+`CyberLab-IAM-App`
 
-This highlights the importance of:
+Service Principal to simulate a real-world Identity Security assessment.
 
-- Least Privilege
-- Application permission review
-- Admin consent governance
-- Service Principal monitoring
-- Secret management
+The objective was to identify governance and privilege risks, validate active application usage, remediate excessive access, and confirm the resulting controls using Microsoft Entra logs and Microsoft Graph.
+
+---
+
+## Initial Findings
+
+The review identified several security findings:
+
+- The Service Principal had no assigned owner.
+- The application had the `User.Read.All` Microsoft Graph Application permission.
+- Administrative consent had previously been granted.
+- A valid Client Secret was active.
+- The Service Principal showed recent successful sign-in activity.
+- The application successfully accessed Microsoft Graph using non-interactive authentication.
+
+This represented a realistic governance and Least Privilege concern.
+
+---
+
+## Service Principal Activity Investigation
+
+Microsoft Entra:
+
+`Service principal sign-ins`
+
+confirmed recent successful activity for:
+
+`CyberLab-IAM-App`
+
+Observed information included:
+
+- Status: `Success`
+- Resource: `Microsoft Graph`
+- Service Principal ID
+- Application ID
+- Request ID
+- Correlation ID
+- Application sign-in timestamp
+
+The activity confirmed that the Service Principal was actively being used rather than simply existing as an unused application identity.
+
+The event also showed that the target resource was:
+
+`Microsoft Graph`
+
+This correlated with the earlier OAuth Client Credentials testing.
+
+---
+
+## Service Principal Sign-In Analysis
+
+The detailed sign-in event included:
+
+- Application: `CyberLab-IAM-App`
+- Resource: `Microsoft Graph`
+- Status: `Success`
+- Application ID matching the lab application
+- Request ID available for investigation
+- Correlation ID available for cross-log analysis
+- Continuous Access Evaluation information
+- Non-agent authentication context
+
+This demonstrated how Entra sign-in telemetry can be used during Service Principal investigations.
+
+---
+
+## Finding 1 – Missing Application Ownership
+
+The Enterprise Application initially displayed:
+
+`No application owners found`
+
+An application without a defined owner creates a governance risk because no individual is explicitly responsible for:
+
+- Permission reviews
 - Credential rotation
-- Application owner review
-- API permission auditing
+- Application lifecycle
+- Security incident response
+- Access reviews
+- Application retirement
 
-An application with excessive permissions can create significant security risk even when no human administrator is actively signed in.
+### Remediation
+
+An administrator was assigned as the Service Principal owner.
+
+This established accountability for future application management.
+
+```text
+Before
+------
+Service Principal
+      ↓
+No Owner
+
+
+After
+-----
+Service Principal
+      ↓
+Assigned Owner
+      ↓
+Clear Accountability
+```
+
+---
+
+## Finding 2 – Excessive Application Permission
+
+The Service Principal had been granted:
+
+`User.Read.All`
+
+as a Microsoft Graph:
+
+`Application permission`
+
+This allowed the application to read all users' profiles without requiring an interactive user session.
+
+The permission had already been validated using OAuth 2.0 Client Credentials.
+
+```text
+CyberLab-IAM-App
+        ↓
+Client Credentials
+        ↓
+Application Token
+        ↓
+User.Read.All
+        ↓
+Microsoft Graph
+        ↓
+GET /users
+        ↓
+SUCCESS
+```
+
+Because the lab application did not require permanent directory-wide read access, the permission was identified as excessive.
+
+---
+
+## Least Privilege Remediation
+
+The:
+
+`User.Read.All`
+
+Application permission was removed.
+
+The remaining Microsoft Graph permission was:
+
+`User.Read`
+
+which is:
+
+`Delegated`
+
+This distinction is important because Delegated permissions require an authenticated user and cannot provide the same application-only access through the Client Credentials flow.
+
+After remediation:
+
+```text
+Microsoft Graph Permissions
+
+User.Read
+Type: Delegated
+
+User.Read.All
+Removed
+```
+
+---
+
+## New OAuth Token Validation
+
+A new OAuth 2.0 Client Credentials token was requested after the permission change.
+
+A new token was required because previously issued tokens could still contain claims representing permissions that existed before the remediation.
+
+The new token was successfully issued.
+
+Token length validation confirmed that a valid JWT access token had been received.
+
+---
+
+## OAuth Token Claim Analysis
+
+The new token payload was decoded locally using PowerShell.
+
+Relevant claims were reviewed.
+
+Observed:
+
+```text
+aud
+https://graph.microsoft.com
+
+appid
+CyberLab-IAM-App Client ID
+
+roles
+empty
+
+scp
+empty
+```
+
+The `roles` claim no longer contained:
+
+`User.Read.All`
+
+This confirmed that the new application token no longer carried the removed Application permission.
+
+The:
+
+`scp`
+
+claim was also empty.
+
+This is expected for:
+
+`Client Credentials`
+
+because Delegated permissions are associated with user-delegated scopes, while application-only authentication uses Application roles.
+
+---
+
+## Microsoft Graph Access Validation After Remediation
+
+The same Microsoft Graph request was executed using the new access token:
+
+```text
+GET https://graph.microsoft.com/v1.0/users
+```
+
+Result:
+
+```text
+HTTP 403 Forbidden
+```
+
+The Service Principal could no longer enumerate directory users.
+
+This technically validated the Least Privilege remediation.
+
+---
+
+## Before vs After
+
+```text
+BEFORE
+
+CyberLab-IAM-App
+        ↓
+User.Read.All
+        ↓
+Application Permission
+        ↓
+Client Credentials Token
+        ↓
+GET /users
+        ↓
+SUCCESS
+
+
+AFTER
+
+CyberLab-IAM-App
+        ↓
+User.Read.All Removed
+        ↓
+New Client Credentials Token
+        ↓
+No Application Roles
+        ↓
+GET /users
+        ↓
+403 Forbidden
+```
+
+This demonstrated that the security control directly reduced the application's effective access.
+
+---
+
+## Audit Log Investigation
+
+Microsoft Entra Audit Logs were reviewed to confirm that the remediation actions were recorded.
+
+Relevant events included:
+
+- `Add owner to service principal`
+- `Remove app role assignment from service principal`
+
+Additional historical application events were also visible, including:
+
+- `Consent to application`
+- `Add app role assignment`
+- `Add delegated permission`
+- `Update service principal`
+
+This provided visibility into the application's administrative lifecycle.
+
+---
+
+## Permission Removal Audit Event
+
+The audit event for the permission removal showed:
+
+```text
+Activity Type:
+Remove app role assignment from service principal
+
+Category:
+ApplicationManagement
+
+Status:
+success
+```
+
+The event also contained:
+
+- Date and time
+- Correlation ID
+- Initiating actor
+- Tenant information
+- Session information
+
+This demonstrated that the Least Privilege remediation was traceable through Microsoft Entra Audit Logs.
+
+---
+
+## Owner Assignment Audit Event
+
+The audit event for application ownership showed:
+
+```text
+Activity Type:
+Add owner to service principal
+
+Category:
+ApplicationManagement
+
+Status:
+success
+```
+
+The event also recorded:
+
+- Date and time
+- Correlation ID
+- Initiating actor
+- Session information
+- Tenant context
+
+This confirmed that governance changes to Service Principals are auditable.
+
+---
+
+## Complete Identity Security Investigation Workflow
+
+The final Service Principal investigation followed this sequence:
+
+```text
+Service Principal Review
+        ↓
+Broad Permission Identified
+        ↓
+Missing Owner Identified
+        ↓
+Service Principal Activity Confirmed
+        ↓
+Security Risk Assessed
+        ↓
+Owner Assigned
+        ↓
+User.Read.All Removed
+        ↓
+New OAuth Token Requested
+        ↓
+Token Claims Reviewed
+        ↓
+Application Roles Removed
+        ↓
+Microsoft Graph Access Retested
+        ↓
+403 Forbidden
+        ↓
+Audit Logs Reviewed
+        ↓
+Remediation Confirmed
+```
+
+This represents a complete Identity Security workflow:
+
+`Finding → Risk Assessment → Remediation → Validation → Audit Trail`
+
+---
+
+## Security Outcome
+
+The Service Principal security posture was improved by:
+
+- Assigning an accountable owner
+- Removing unnecessary Application permissions
+- Reducing Microsoft Graph access
+- Validating privilege reduction through OAuth token claims
+- Confirming access denial after remediation
+- Reviewing Service Principal sign-ins
+- Reviewing audit logs for change traceability
+
+The exercise demonstrated that Microsoft Entra Service Principals must be treated as identities with their own:
+
+- privileges
+- credentials
+- activity
+- ownership
+- lifecycle
+- security risk
 
 ---
 
@@ -803,6 +1318,14 @@ An application with excessive permissions can create significant security risk e
 | OAuth 2.0 Client Credentials | Validated |
 | Microsoft Graph API access | Validated |
 | Application identity | Validated |
+| Service Principal activity review | Validated |
+| Service Principal ownership review | Validated |
+| Excessive permission finding | Validated |
+| Permission remediation | Validated |
+| OAuth token claim analysis | Validated |
+| Post-remediation access test | Validated |
+| Entra Audit Logs | Validated |
+| Audit trail correlation | Validated |
 
 ---
 
@@ -826,8 +1349,16 @@ The lab included troubleshooting and investigation of:
 - OAuth Client Credentials
 - Invalid Client Secret errors
 - Client Secret Value vs Secret ID
-- Microsoft Graph application authentication
-- PowerShell REST API interaction
+- Lost PowerShell variables
+- Invalid token endpoint construction
+- Empty access token variables
+- OAuth token regeneration
+- JWT payload decoding
+- Application roles vs delegated scopes
+- Microsoft Graph authorization failures
+- Service Principal sign-in investigation
+- Entra Audit Log investigation
+- Permission removal validation
 
 ---
 
@@ -843,6 +1374,7 @@ The lab included troubleshooting and investigation of:
 - RBAC
 - Least Privilege
 - Sign-in logs
+- Audit logs
 - MFA
 - App Registrations
 - Enterprise Applications
@@ -858,6 +1390,8 @@ The lab included troubleshooting and investigation of:
 - Application access control
 - Identity lifecycle foundations
 - Least Privilege architecture
+- Application ownership
+- IAM governance
 
 ### Application Identity
 
@@ -870,6 +1404,8 @@ The lab included troubleshooting and investigation of:
 - Tenant IDs
 - Client secrets
 - Non-interactive authentication
+- Service Principal sign-ins
+- Application ownership
 
 ### OAuth 2.0
 
@@ -879,6 +1415,9 @@ The lab included troubleshooting and investigation of:
 - Application authentication
 - `.default` scope
 - Application-to-application authentication
+- JWT token analysis
+- Token claims
+- Application roles
 
 ### Microsoft Graph
 
@@ -890,6 +1429,7 @@ The lab included troubleshooting and investigation of:
 - Admin consent
 - Directory user queries
 - API access validation
+- Post-remediation authorization testing
 
 ### Identity Security
 
@@ -900,7 +1440,12 @@ The lab included troubleshooting and investigation of:
 - Administrative consent review
 - Credential security
 - Application permission analysis
-- Authentication troubleshooting
+- Service Principal monitoring
+- Missing-owner detection
+- Privilege remediation
+- Identity investigation
+- Audit trail validation
+- Security control validation
 
 ### PowerShell
 
@@ -910,6 +1455,10 @@ The lab included troubleshooting and investigation of:
 - HTTP authorization headers
 - Microsoft Graph queries
 - API response processing
+- JWT parsing
+- Base64URL decoding
+- Error handling
+- HTTP status validation
 
 ---
 
@@ -928,7 +1477,15 @@ User Credentials
 Authentication Tokens
 ```
 
-Client Secrets used for testing should be rotated, expired, or deleted when they are no longer required.
+Client Secrets used for testing should be:
+
+- rotated
+- expired
+- or deleted
+
+when they are no longer required.
+
+Secrets exposed during testing should be considered compromised and replaced.
 
 ---
 
@@ -964,51 +1521,76 @@ Client Secrets used for testing should be rotated, expired, or deleted when they
 - [x] Microsoft Graph queried
 - [x] Directory users returned through Graph
 - [x] Non-interactive application identity validated
+- [x] Service Principal security review completed
+- [x] Service Principal sign-in activity investigated
+- [x] Successful Microsoft Graph service principal access confirmed
+- [x] Missing Service Principal owner identified
+- [x] Service Principal owner assigned
+- [x] Excessive `User.Read.All` permission identified
+- [x] `User.Read.All` removed
+- [x] New OAuth token issued after remediation
+- [x] OAuth token claims inspected
+- [x] Application roles confirmed removed
+- [x] Delegated scope behavior reviewed
+- [x] Microsoft Graph access retested
+- [x] HTTP 403 validated after privilege reduction
+- [x] Entra Audit Logs reviewed
+- [x] Permission removal audit event validated
+- [x] Owner assignment audit event validated
+- [x] Complete remediation audit trail documented
 
 ---
 
-## Planned Advanced Phase
+## Final Security Review Summary
 
-The next phase of this project will move from IAM configuration into deeper Identity Security engineering and investigation.
+The advanced phase of this lab simulated a real-world Service Principal security review.
 
-Planned exercises include:
+### Findings
 
-- Service Principal security review
-- API permission reduction
-- Least Privilege remediation
-- Client Secret rotation
-- Secret expiration analysis
-- Credential lifecycle management
-- App Roles
-- Application authorization
-- Microsoft Entra Audit Logs
-- Service Principal sign-in investigation
-- Admin consent investigation
-- Excessive API permission detection
-- Conditional Access
-- Privileged account protection
-- Break-glass account design
-- Joiner-Mover-Leaver lifecycle
-- Access reviews
-- Identity governance
-- Privileged identity investigation
-- IAM incident response
-- Identity attack-path analysis
+1. Missing Service Principal owner
+2. Broad Microsoft Graph Application permission
+3. Active Client Secret
+4. Successful non-interactive Microsoft Graph access
+5. Active Service Principal sign-in history
 
-The objective of the next phase is to simulate tasks closer to real-world:
+### Remediation
 
-- IAM Analyst
-- Identity Security Analyst
-- Microsoft Entra Administrator
-- Cloud Security Analyst
+1. Assigned accountable ownership
+2. Removed unnecessary `User.Read.All`
+3. Requested a new OAuth token
+4. Inspected token claims
+5. Confirmed removal of Application roles
+6. Retested Microsoft Graph access
+7. Confirmed HTTP 403
+8. Validated changes through Entra Audit Logs
+
+### Result
+
+```text
+Initial State
+     ↓
+Broad Application Access
+     ↓
+Security Review
+     ↓
+Least Privilege Remediation
+     ↓
+Access Reduction
+     ↓
+Technical Validation
+     ↓
+Audit Confirmation
+```
+
+The final environment demonstrated not only IAM configuration, but also security assessment and remediation of application identities.
 
 ---
 
 ## Conclusion
 
-This lab began with basic cloud identity administration and progressively moved into application identity and OAuth security.
+This lab began with basic cloud identity administration and progressively moved into application identity, OAuth security, Service Principal investigation, and Least Privilege remediation.
 
-The environment currently validates the following chain:
+The environment validated the following progression:
 
 ```text
 Cloud Users
@@ -1038,10 +1620,52 @@ Application Access Token
 Microsoft Graph
      ↓
 Directory Data
+     ↓
+Service Principal Review
+     ↓
+Risk Identification
+     ↓
+Permission Remediation
+     ↓
+Token Claim Validation
+     ↓
+403 Forbidden
+     ↓
+Audit Trail Review
 ```
 
-The project demonstrates that identity security extends beyond user accounts and passwords.
+The project demonstrates that identity security extends beyond human users and passwords.
 
-Applications and Service Principals are identities as well, and their permissions, credentials, ownership, and consent must be managed using the same Least Privilege principles applied to human users.
+Applications and Service Principals are identities as well, and their:
 
-The next phase will focus on advanced Identity Security scenarios including privilege reduction, Service Principal auditing, Conditional Access, identity governance, credential lifecycle management, and IAM incident investigation.
+- permissions
+- credentials
+- ownership
+- activity
+- consent
+- lifecycle
+
+must be managed using the same Least Privilege and governance principles applied to human identities.
+
+The lab concluded with a complete Identity Security workflow:
+
+```text
+Finding
+   ↓
+Risk Assessment
+   ↓
+Remediation
+   ↓
+Validation
+   ↓
+Audit Trail
+```
+
+This project provided hands-on experience relevant to:
+
+- IAM Analyst
+- Identity Security Analyst
+- Microsoft Entra Administrator
+- Cloud Security Analyst
+- Identity Governance
+- Application Identity Security
